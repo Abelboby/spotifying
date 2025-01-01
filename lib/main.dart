@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: const Color(0xFF1DB954), // Spotify Green
           brightness: Brightness.light,
         ),
         useMaterial3: true,
@@ -132,13 +132,50 @@ class GroupListScreen extends StatelessWidget {
         title: Row(
           children: [
             Icon(
-              Icons.groups,
+              Icons.library_music,
               color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
             const SizedBox(width: 12),
-            const Text('My Groups'),
+            const Text('Spotify Family Plans'),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Everything',
+            onPressed: () {
+              print('Refreshing app state...');
+              // Show loading indicator
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const Center(
+                  child: Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Refreshing...'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+
+              // Simulate refresh
+              Future.delayed(const Duration(seconds: 1), () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => GroupListScreen()),
+                );
+              });
+            },
+          ),
+        ],
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       ),
@@ -154,7 +191,7 @@ class GroupListScreen extends StatelessWidget {
                   const CircularProgressIndicator(),
                   const SizedBox(height: 16),
                   Text(
-                    'Loading your groups...',
+                    'Loading your plans...',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ],
@@ -169,18 +206,18 @@ class GroupListScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.group_off,
+                    Icons.queue_music,
                     size: 64,
                     color: Theme.of(context).colorScheme.secondary,
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No Groups Found',
+                    'No Family Plans Yet',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Create a new group to get started',
+                    'Create a new plan to start tracking payments',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.outline,
                         ),
@@ -221,15 +258,11 @@ class GroupListScreen extends StatelessWidget {
                               shape: BoxShape.circle,
                             ),
                             child: Center(
-                              child: Text(
-                                group['groupName'][0].toUpperCase(),
-                                style: TextStyle(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onPrimaryContainer,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              child: Icon(
+                                Icons.album,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer,
                               ),
                             ),
                           ),
@@ -247,7 +280,7 @@ class GroupListScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'ID: ${group.id}',
+                                  'Tap to manage members',
                                   style: Theme.of(context)
                                       .textTheme
                                       .bodySmall
@@ -1077,10 +1110,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         final RegExp senderRegex = RegExp(
             r'(?:from|by) ([A-Za-z\s]+)(?=\s+(?:Ref|UPI|on|$))',
             caseSensitive: false);
+        final RegExp refRegex = RegExp(r'Ref No (\d+)', caseSensitive: false);
 
         final dateMatch = dateRegex.firstMatch(message.body!);
         final amountMatch = amountRegex.firstMatch(message.body!);
         final senderMatch = senderRegex.firstMatch(message.body!);
+        final refMatch = refRegex.firstMatch(message.body!);
 
         if (dateMatch == null || amountMatch == null || senderMatch == null) {
           print('Skipping message - Missing required information');
@@ -1092,11 +1127,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         final year = int.tryParse(dateMatch.group(3) ?? '');
         final amount = amountMatch.group(1);
         final sender = senderMatch.group(1)?.trim();
+        final refNo = refMatch?.group(1);
 
         print('Extracted data:');
         print('Date: $day-$monthStr-$year');
         print('Amount: Rs.$amount');
         print('Sender: $sender');
+        print('Ref No: $refNo');
 
         if (day == null || monthStr == null || year == null || sender == null) {
           print('Skipping message - Invalid data');
@@ -1174,10 +1211,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             }
 
             print('Match found! Marking ${member['name']} as paid');
+
+            // Create payment note
+            final paymentNote =
+                'Auto-marked: Rs.$amount received from $sender' +
+                    (refNo != null ? ' (Ref: $refNo)' : '');
+
             await member.reference.update({
               'payments.$selectedMonth': true,
               'forwarded': false,
+              'paymentNotes.$selectedMonth': paymentNote,
             });
+
             markedCount++;
             processedMembers.add('${member['name']} (Rs.$amount)');
             break;
@@ -1374,436 +1419,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
-  // Add this method to handle payment marking with notes
-  Future<void> _showMarkAsPaidDialog(DocumentSnapshot member) async {
-    final TextEditingController noteController = TextEditingController();
-    final bool currentStatus = member['payments'][selectedMonth] ?? false;
-
-    return showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              currentStatus ? Icons.remove_circle : Icons.check_circle,
-              color: currentStatus ? Colors.red : Colors.green,
-            ),
-            const SizedBox(width: 8),
-            Text(currentStatus ? 'Mark as Unpaid' : 'Mark as Paid'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              currentStatus
-                  ? 'Are you sure you want to mark ${member['name']} as unpaid?'
-                  : 'Add a note about how the payment was made:',
-            ),
-            if (!currentStatus) ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: noteController,
-                decoration: InputDecoration(
-                  hintText: 'e.g., Paid via UPI, Cash, etc.',
-                  filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                maxLines: 2,
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final note = noteController.text.trim();
-              if (!currentStatus && note.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please add a note about the payment'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-                return;
-              }
-
-              await membersCollection.doc(member.id).update({
-                'payments.$selectedMonth': !currentStatus,
-                if (!currentStatus) 'paymentNotes.$selectedMonth': note,
-                if (!currentStatus) 'forwarded': false,
-              });
-
-              Navigator.pop(context);
-              _fetchPendingMembers();
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: currentStatus ? Colors.red : Colors.green,
-            ),
-            child: Text(currentStatus ? 'Mark Unpaid' : 'Mark Paid'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMemberSection(
-    BuildContext context,
-    String title,
-    List<DocumentSnapshot> members,
-    IconData icon,
-    Color iconColor,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              Icon(icon, color: iconColor, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '$title (${members.length})',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ],
-          ),
-        ),
-        if (members.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: Text(
-                'No ${title.toLowerCase()} yet',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ),
-            ),
-          )
-        else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: members.length,
-            itemBuilder: (context, index) {
-              final member = members[index];
-              final bankingName = member['bankingName'] as String?;
-              final paymentAmount = member['paymentAmount'] as double?;
-              final paymentNote = (member['paymentNotes']
-                  as Map<String, dynamic>?)?[selectedMonth] as String?;
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Material(
-                  borderRadius: BorderRadius.circular(12),
-                  color: Theme.of(context).colorScheme.surface,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _showEditMemberDialog(member),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    member['name'][0].toUpperCase(),
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onPrimaryContainer,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      member['name'],
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    if (bankingName != null ||
-                                        paymentAmount != null)
-                                      const SizedBox(height: 2),
-                                    if (bankingName != null ||
-                                        paymentAmount != null)
-                                      Text(
-                                        [
-                                          if (bankingName != null) bankingName,
-                                          if (paymentAmount != null)
-                                            'Rs.${paymentAmount.toStringAsFixed(0)}',
-                                        ].join(' • '),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .outline,
-                                            ),
-                                      ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      member['phoneNumber'],
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .outline,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.more_vert,
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                                onPressed: () {
-                                  showModalBottomSheet(
-                                    context: context,
-                                    builder: (context) => SafeArea(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          ListTile(
-                                            leading: Icon(
-                                              member['payments']
-                                                          [selectedMonth] ??
-                                                      false
-                                                  ? Icons.remove_circle
-                                                  : Icons.check_circle,
-                                              color: member['payments']
-                                                          [selectedMonth] ??
-                                                      false
-                                                  ? Colors.red
-                                                  : Colors.green,
-                                            ),
-                                            title: Text(
-                                              member['payments']
-                                                          [selectedMonth] ??
-                                                      false
-                                                  ? 'Mark as Unpaid'
-                                                  : 'Mark as Paid',
-                                            ),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _showMarkAsPaidDialog(member);
-                                            },
-                                          ),
-                                          ListTile(
-                                            leading: const Icon(Icons.edit),
-                                            title: const Text('Edit Member'),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _showEditMemberDialog(member);
-                                            },
-                                          ),
-                                          ListTile(
-                                            leading: const Icon(Icons.delete,
-                                                color: Colors.red),
-                                            title: const Text('Delete Member',
-                                                style: TextStyle(
-                                                    color: Colors.red)),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _deleteMember(member);
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                          if (paymentNote != null) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surfaceVariant,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.note,
-                                    size: 16,
-                                    color:
-                                        Theme.of(context).colorScheme.outline,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      paymentNote,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-      ],
-    );
-  }
-
-  void _togglePaymentStatus(DocumentSnapshot member) {
-    final bool currentStatus = member['payments'][selectedMonth] ?? false;
-    final bool newStatus = !currentStatus;
-
-    membersCollection.doc(member.id).update({
-      'payments.$selectedMonth': newStatus,
-      // Reset forwarded status when marking as paid
-      if (newStatus) 'forwarded': false,
-    }).then((_) {
-      // Fetch pending members after payment status is updated
-      _fetchPendingMembers();
-    });
-  }
-
-  void _handleMemberAction(String action, DocumentSnapshot member) {
-    switch (action) {
-      case 'edit':
-        _showEditMemberDialog(member);
-        break;
-      case 'delete':
-        _deleteMember(member);
-        break;
-    }
-  }
-
-  Widget _buildMembersListView() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: membersCollection.snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.people_outline,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.secondary,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No Members Found',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Add members to get started',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final members = snapshot.data!.docs;
-        final filteredMembers = members.where((member) {
-          final payments = member['payments'] ?? {};
-          return selectedMonth == null || payments[selectedMonth] != null;
-        }).toList();
-
-        final paidMembers = filteredMembers
-            .where((member) => member['payments'][selectedMonth] ?? false)
-            .toList();
-        final pendingMembers = filteredMembers
-            .where((member) => !(member['payments'][selectedMonth] ?? false))
-            .toList();
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildMemberSection(
-              context,
-              'Paid Members',
-              paidMembers,
-              Icons.check_circle,
-              Colors.green,
-            ),
-            const SizedBox(height: 24),
-            _buildMemberSection(
-              context,
-              'Pending Members',
-              pendingMembers,
-              Icons.pending,
-              Colors.orange,
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (isInitializing) {
       return Scaffold(
         appBar: AppBar(
-          title: Text('Members of ${widget.groupName}'),
+          title: Text('${widget.groupName} Members'),
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           elevation: 0,
         ),
@@ -1814,12 +1435,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
               Text(
-                'Initializing...',
+                'Loading Members...',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
               Text(
-                'Loading members and checking payments',
+                'Checking payment status',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.outline,
                     ),
@@ -1832,7 +1453,101 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Members of ${widget.groupName}'),
+        title: Row(
+          children: [
+            Icon(
+              Icons.album,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.groupName),
+                  Text(
+                    'Family Plan Members',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onPrimaryContainer
+                              .withOpacity(0.8),
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Everything',
+            onPressed: () {
+              print('Refreshing group details...');
+              // Show loading indicator
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => Center(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Refreshing ${widget.groupName}...',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Checking latest payments',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+
+              // Perform refresh operations
+              Future.wait([
+                _initializeData(),
+                Future.delayed(
+                    const Duration(milliseconds: 500)), // Minimum loading time
+              ]).then((_) {
+                // Pop loading dialog
+                Navigator.pop(context);
+                // Show success message
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Refreshed successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }).catchError((error) {
+                // Pop loading dialog
+                Navigator.pop(context);
+                // Show error message
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error refreshing: $error'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              });
+            },
+          ),
+        ],
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         elevation: 0,
       ),
@@ -1894,7 +1609,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                       IconButton(
                         icon: const Icon(Icons.add),
                         onPressed: isLoading ? null : _addNewMonth,
-                        tooltip: 'Add New Month',
+                        tooltip: 'Add Next Month',
                       ),
                     ],
                   ),
@@ -1907,30 +1622,30 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     Expanded(
                       child: _buildActionButton(
                         icon: Icons.account_balance,
-                        label: 'Auto-mark\nPayments',
+                        label: 'Check\nPayments',
                         onPressed: processAutomaticPayments,
                         isProcessing: isLoading,
-                        processingLabel: 'Checking\nPayments...',
+                        processingLabel: 'Checking\nSMS...',
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _buildActionButton(
                         icon: Icons.notifications_active,
-                        label: 'Mention\nPending',
+                        label: 'Remind\nPending',
                         onPressed: _mentionPendingUsers,
                         isProcessing: isLoading,
-                        processingLabel: 'Mentioning\nUsers...',
+                        processingLabel: 'Sending\nReminders...',
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _buildActionButton(
                         icon: Icons.check_circle,
-                        label: 'Forward\nPaid',
+                        label: 'Share\nPaid List',
                         onPressed: _mentionPaidUsers,
                         isProcessing: isLoading,
-                        processingLabel: 'Forwarding\nPaid...',
+                        processingLabel: 'Sharing\nList...',
                       ),
                     ),
                   ],
@@ -2010,6 +1725,74 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     );
   }
 
+  // Member list UI
+  Widget _buildMemberList(
+    BuildContext context,
+    String title,
+    List<DocumentSnapshot> members,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: members.length,
+            itemBuilder: (context, index) {
+              final member = members[index];
+              return ListTile(
+                title: Text(member['name']),
+                subtitle: Text('Phone: ${member['phoneNumber']}'),
+                trailing: PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'Edit') {
+                      _showEditMemberDialog(member);
+                    } else if (value == 'Delete') {
+                      _deleteMember(member);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'Edit',
+                      child: Text('Edit'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'Delete',
+                      child: Text('Delete'),
+                    ),
+                  ],
+                ),
+                leading: IconButton(
+                  icon: Icon(
+                    (member['payments'][selectedMonth] ?? false)
+                        ? Icons.check_circle
+                        : Icons.check_circle_outline,
+                    color: (member['payments'][selectedMonth] ?? false)
+                        ? Colors.green
+                        : Colors.grey,
+                  ),
+                  onPressed: () {
+                    membersCollection.doc(member.id).update({
+                      'payments.$selectedMonth':
+                          !(member['payments'][selectedMonth] ?? false),
+                    });
+                  },
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   // Edit Member Dialog
   void _showEditMemberDialog(DocumentSnapshot member) {
     final TextEditingController nameController =
@@ -2026,84 +1809,39 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              Icons.edit,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 8),
-            const Text('Edit Member'),
-          ],
-        ),
+        title: const Text('Edit Member'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: InputDecoration(
-                hintText: 'Name',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              decoration: const InputDecoration(hintText: 'Name'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: phoneController,
-              decoration: InputDecoration(
-                hintText: 'Phone Number',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              decoration: const InputDecoration(hintText: 'Phone Number'),
               keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 8),
             TextField(
               controller: groupIdController,
-              decoration: InputDecoration(
-                hintText: 'Group ID',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              decoration: const InputDecoration(hintText: 'Group ID'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: bankingNameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Banking Name (Optional)',
                 helperText: 'Name as it appears in bank transactions',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
               ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: amountController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Payment Amount',
                 helperText: 'Monthly payment amount to check in transactions',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
               ),
               keyboardType: TextInputType.number,
             ),
@@ -2116,7 +1854,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             },
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () {
               final name = nameController.text.trim();
               final phone = phoneController.text.trim();
@@ -2131,10 +1869,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   amount = double.tryParse(amountText);
                   if (amount == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Invalid payment amount'),
-                        backgroundColor: Colors.orange,
-                      ),
+                      const SnackBar(content: Text('Invalid payment amount')),
                     );
                     return;
                   }
@@ -2150,17 +1885,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Member updated successfully'),
-                    backgroundColor: Colors.green,
-                  ),
+                  const SnackBar(content: Text('Member updated successfully')),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Required fields cannot be empty!'),
-                    backgroundColor: Colors.orange,
-                  ),
+                      content: Text('Required fields cannot be empty!')),
                 );
               }
             },
@@ -2176,14 +1906,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.delete, color: Colors.red),
-            const SizedBox(width: 8),
-            const Text('Delete Member'),
-          ],
-        ),
-        content: Text('Are you sure you want to delete ${member['name']}?'),
+        title: const Text('Delete Member'),
+        content: const Text('Are you sure you want to delete this member?'),
         actions: [
           TextButton(
             onPressed: () {
@@ -2191,20 +1915,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             },
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () async {
               await member.reference.delete();
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Member deleted successfully'),
-                  backgroundColor: Colors.green,
-                ),
+                const SnackBar(content: Text('Member deleted successfully')),
               );
             },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
             child: const Text('Delete'),
           ),
         ],
@@ -2223,84 +1941,39 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              Icons.person_add,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 8),
-            const Text('Add New Member'),
-          ],
-        ),
+        title: const Text('Add New Member'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: InputDecoration(
-                hintText: 'Name',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              decoration: const InputDecoration(hintText: 'Name'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: phoneController,
-              decoration: InputDecoration(
-                hintText: 'Phone Number',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              decoration: const InputDecoration(hintText: 'Phone Number'),
               keyboardType: TextInputType.phone,
             ),
             const SizedBox(height: 8),
             TextField(
               controller: groupIdController,
-              decoration: InputDecoration(
-                hintText: 'Group ID',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              decoration: const InputDecoration(hintText: 'Group ID'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: bankingNameController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Banking Name (Optional)',
                 helperText: 'Name as it appears in bank transactions',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
               ),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: amountController,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Payment Amount',
                 helperText: 'Monthly payment amount to check in transactions',
-                filled: true,
-                fillColor: Theme.of(context).colorScheme.surfaceVariant,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
               ),
               keyboardType: TextInputType.number,
             ),
@@ -2313,7 +1986,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             },
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          TextButton(
             onPressed: () async {
               final name = nameController.text.trim();
               final phone = phoneController.text.trim();
@@ -2328,10 +2001,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   amount = double.tryParse(amountText);
                   if (amount == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Invalid payment amount'),
-                        backgroundColor: Colors.orange,
-                      ),
+                      const SnackBar(content: Text('Invalid payment amount')),
                     );
                     return;
                   }
@@ -2355,17 +2025,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Member added successfully'),
-                    backgroundColor: Colors.green,
-                  ),
+                  const SnackBar(content: Text('Member added successfully')),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Required fields cannot be empty!'),
-                    backgroundColor: Colors.orange,
-                  ),
+                      content: Text('Required fields cannot be empty!')),
                 );
               }
             },
@@ -2374,5 +2039,427 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildMembersListView() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: membersCollection.snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.people_outline,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'No Members Found',
+                  style: TextStyle(fontSize: 18),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final members = snapshot.data!.docs;
+        final filteredMembers = members.where((member) {
+          final payments = member['payments'] ?? {};
+          return selectedMonth == null || payments[selectedMonth] != null;
+        }).toList();
+
+        final paidMembers = filteredMembers
+            .where((member) => member['payments'][selectedMonth] ?? false)
+            .toList();
+        final pendingMembers = filteredMembers
+            .where((member) => !(member['payments'][selectedMonth] ?? false))
+            .toList();
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildMemberSection(
+              context,
+              'Paid Members',
+              paidMembers,
+              Icons.check_circle,
+              Colors.green,
+            ),
+            const SizedBox(height: 24),
+            _buildMemberSection(
+              context,
+              'Pending Members',
+              pendingMembers,
+              Icons.pending,
+              Colors.orange,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMemberSection(
+    BuildContext context,
+    String title,
+    List<DocumentSnapshot> members,
+    IconData icon,
+    Color iconColor,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, color: iconColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title == 'Paid Members'
+                    ? 'Premium Members'
+                    : 'Pending Payments',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '(${members.length})',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        if (members.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: Text(
+                'No ${title.toLowerCase()} yet',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: members.length,
+            itemBuilder: (context, index) {
+              final member = members[index];
+              final bankingName = member['bankingName'] as String?;
+              final paymentAmount = member['paymentAmount'] as double?;
+              final paymentNote =
+                  member['paymentNotes']?[selectedMonth] as String?;
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Material(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Theme.of(context).colorScheme.surface,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _showMemberActions(member),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                member['name'][0].toUpperCase(),
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  member['name'],
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (bankingName != null ||
+                                    paymentAmount != null)
+                                  const SizedBox(height: 2),
+                                if (bankingName != null ||
+                                    paymentAmount != null)
+                                  Text(
+                                    [
+                                      if (bankingName != null) bankingName,
+                                      if (paymentAmount != null)
+                                        'Rs.${paymentAmount.toStringAsFixed(0)}',
+                                    ].join(' • '),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .outline,
+                                        ),
+                                  ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  member['phoneNumber'],
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline,
+                                      ),
+                                ),
+                                if (paymentNote != null) ...[
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer
+                                          .withOpacity(0.5),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      paymentNote,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onPrimaryContainer,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.more_vert,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                            onPressed: () => _showMemberActions(member),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  void _showMemberActions(DocumentSnapshot member) {
+    final bool isPaid = member['payments'][selectedMonth] ?? false;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        member['name'][0].toUpperCase(),
+                        style: TextStyle(
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          member['name'],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          member['phoneNumber'],
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(
+                isPaid ? Icons.check_circle : Icons.check_circle_outline,
+                color: isPaid ? Colors.green : null,
+              ),
+              title: Text(isPaid ? 'Mark as Unpaid' : 'Mark as Paid'),
+              onTap: () {
+                Navigator.pop(context);
+                if (!isPaid) {
+                  _showPaymentNoteDialog(member);
+                } else {
+                  _togglePaymentStatus(member, note: null);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Edit Member'),
+              onTap: () {
+                Navigator.pop(context);
+                _showEditMemberDialog(member);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Delete Member',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMember(member);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPaymentNoteDialog(DocumentSnapshot member) {
+    final TextEditingController noteController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Payment Note'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: noteController,
+              decoration: const InputDecoration(
+                hintText: 'Enter payment details (optional)',
+                helperText: 'e.g., Paid by cash, UPI, etc.',
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _togglePaymentStatus(
+                member,
+                note: noteController.text.trim().isNotEmpty
+                    ? noteController.text.trim()
+                    : 'Manually marked as paid',
+              );
+            },
+            child: const Text('Mark as Paid'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _togglePaymentStatus(DocumentSnapshot member, {String? note}) async {
+    final bool currentStatus = member['payments'][selectedMonth] ?? false;
+    final bool newStatus = !currentStatus;
+
+    final Map<String, dynamic> updateData = {
+      'payments.$selectedMonth': newStatus,
+      if (newStatus) 'forwarded': false,
+    };
+
+    // Add or remove payment note
+    if (newStatus && note != null) {
+      updateData['paymentNotes.$selectedMonth'] = note;
+    } else if (!newStatus) {
+      updateData['paymentNotes.$selectedMonth'] = FieldValue.delete();
+    }
+
+    await membersCollection.doc(member.id).update(updateData).then((_) {
+      // Fetch pending members after payment status is updated
+      _fetchPendingMembers();
+    });
+  }
+
+  void _handleMemberAction(String action, DocumentSnapshot member) {
+    switch (action) {
+      case 'edit':
+        _showEditMemberDialog(member);
+        break;
+      case 'delete':
+        _deleteMember(member);
+        break;
+    }
   }
 }
