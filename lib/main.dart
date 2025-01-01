@@ -25,7 +25,8 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1DB954), // Spotify Green
+          //seedColor: const Color(0xFF1DB954), // Spotify Green
+          seedColor: Colors.blue,
           brightness: Brightness.light,
         ),
         useMaterial3: true,
@@ -293,24 +294,111 @@ class GroupListScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: Icon(
-                                  Icons.edit,
-                                  color: Theme.of(context).colorScheme.primary,
+                          IconButton(
+                            icon: Icon(
+                              Icons.more_vert,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                builder: (context) => SafeArea(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primaryContainer,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Center(
+                                                child: Icon(
+                                                  Icons.album,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onPrimaryContainer,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    group['groupName'],
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 16,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    'Spotify Family Plan',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .outline,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Divider(),
+                                      ListTile(
+                                        leading: Icon(
+                                          Icons.edit,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                        ),
+                                        title: const Text('Rename Plan'),
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          _showEditGroupDialog(context, group);
+                                        },
+                                      ),
+                                      ListTile(
+                                        leading: const Icon(
+                                          Icons.delete_forever,
+                                          color: Colors.red,
+                                        ),
+                                        title: const Text(
+                                          'Delete Plan',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                        subtitle: const Text(
+                                          'This action cannot be undone',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                        onTap: () {
+                                          Navigator.pop(context);
+                                          _showDeleteGroupDialog(
+                                              context, group);
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                    ],
+                                  ),
                                 ),
-                                onPressed: () =>
-                                    _showEditGroupDialog(context, group),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete),
-                                color: Colors.red,
-                                onPressed: () =>
-                                    _showDeleteGroupDialog(context, group),
-                              ),
-                            ],
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -2310,13 +2398,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: Center(
-                      child: Text(
-                        member['name'][0].toUpperCase(),
-                        style: TextStyle(
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: Icon(
+                        Icons.album,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
                       ),
                     ),
                   ),
