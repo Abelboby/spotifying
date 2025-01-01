@@ -115,16 +115,62 @@ class GroupListScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => GroupDetailScreen(
-                          groupId: group.id,
-                          groupName: group['groupName'],
-                        ),
-                      ),
+                  onTap: () async {
+                    // Show loading dialog
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (BuildContext context) {
+                        return const Center(
+                          child: Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(20.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircularProgressIndicator(),
+                                  SizedBox(height: 16),
+                                  Text('Loading group details...'),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     );
+
+                    // Pre-fetch the members data
+                    final membersCollection = FirebaseFirestore.instance
+                        .collection('groups1')
+                        .doc(group.id)
+                        .collection('members');
+
+                    try {
+                      // Wait for initial data fetch
+                      await membersCollection.get();
+
+                      // Pop the loading dialog
+                      Navigator.pop(context);
+
+                      // Navigate to group details
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => GroupDetailScreen(
+                            groupId: group.id,
+                            groupName: group['groupName'],
+                          ),
+                        ),
+                      );
+                    } catch (error) {
+                      // Pop the loading dialog
+                      Navigator.pop(context);
+
+                      // Show error message
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error loading group: $error')),
+                      );
+                    }
                   },
                 ),
               );
@@ -180,10 +226,25 @@ class GroupListScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final groupName = groupNameController.text.trim();
               if (groupName.isNotEmpty) {
-                groupsCollection.add({'groupName': groupName});
+                // Create the group
+                final docRef =
+                    await groupsCollection.add({'groupName': groupName});
+
+                // Initialize with current month
+                String currentMonth = DateTime.now().toString().substring(0, 7);
+
+                // Create a dummy document to initialize the members collection
+                await docRef.collection('members').add({
+                  'name': 'Dummy',
+                  'phoneNumber': '0000000000',
+                  'groupId': docRef.id,
+                  'payments': {currentMonth: false},
+                  'forwarded': false,
+                });
+
                 Navigator.pop(context);
               }
             },
@@ -242,71 +303,78 @@ class GroupDetailScreen extends StatefulWidget {
 
 class _GroupDetailScreenState extends State<GroupDetailScreen> {
   String? selectedMonth;
-  late List<String> availableMonths;
+  List<String> availableMonths = [];
   late CollectionReference membersCollection;
   List<String> pendingMembersMap = [];
   bool isLoading = false;
+  bool isInitializing = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchPendingMembers();
     membersCollection = FirebaseFirestore.instance
         .collection('groups1')
         .doc(widget.groupId)
         .collection('members');
-    _fetchAvailableMonths();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    try {
+      await _fetchAvailableMonths();
+      await _fetchPendingMembers();
+    } finally {
+      if (mounted) {
+        setState(() {
+          isInitializing = false;
+        });
+      }
+    }
   }
 
   Future<void> _fetchPendingMembers() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('groups1')
-        .doc(widget.groupId)
-        .collection('members')
+    if (selectedMonth == null) return;
+
+    final snapshot = await membersCollection
+        .where('payments.$selectedMonth', isEqualTo: false)
         .get();
 
     setState(() {
       pendingMembersMap = snapshot.docs
-          .where((doc) {
-            final payments = doc['payments'] ?? {};
-            // Only include members who are pending for the selected month
-            return selectedMonth != null &&
-                (payments[selectedMonth] == false ||
-                    payments[selectedMonth] == null);
-          })
           .map((doc) => doc['phoneNumber'] as String)
           .toSet() // Remove duplicates
           .toList();
 
-      print('Pending Members: $pendingMembersMap');
+      print('Pending Members Updated: $pendingMembersMap');
     });
   }
 
-  // Fetch available months from Firestore
-  void _fetchAvailableMonths() async {
-    // Fetch all members to derive the months from their payments field
+  Future<void> _fetchAvailableMonths() async {
     QuerySnapshot snapshot = await membersCollection.get();
     final allMonths = <String>{};
 
-    for (var member in snapshot.docs) {
-      final payments = member['payments'] ?? {};
-      allMonths.addAll(payments.keys);
+    if (snapshot.docs.isEmpty) {
+      // If no members exist, initialize with current month
+      String currentMonth = DateTime.now().toString().substring(0, 7);
+      allMonths.add(currentMonth);
+    } else {
+      for (var member in snapshot.docs) {
+        final payments = member['payments'] ?? {};
+        allMonths.addAll(payments.keys.cast<String>());
+      }
     }
 
-    setState(() {
-      availableMonths = allMonths.toList()..sort();
-
-      // Get current month in 'yyyy-MM' format
-      String currentMonth =
-          DateTime.now().toString().substring(0, 7); // 'yyyy-MM'
-      // If months are available, set the current month as the default selection
-      selectedMonth = availableMonths.isNotEmpty
-          ? availableMonths.contains(currentMonth)
-              ? currentMonth
-              : availableMonths.last
-          : currentMonth;
-      _fetchPendingMembers();
-    });
+    if (mounted) {
+      setState(() {
+        availableMonths = allMonths.toList()..sort();
+        String currentMonth = DateTime.now().toString().substring(0, 7);
+        selectedMonth = availableMonths.isNotEmpty
+            ? availableMonths.contains(currentMonth)
+                ? currentMonth
+                : availableMonths.last
+            : currentMonth;
+      });
+    }
   }
 
   // Method to calculate the next month based on the current one
@@ -327,23 +395,46 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   // Add new month to all members
   void _addNewMonth() async {
-    if (availableMonths.isEmpty) return;
+    if (availableMonths.isEmpty) {
+      // If this is a new group with no months, initialize with current month
+      String currentMonth = DateTime.now().toString().substring(0, 7);
+      String newMonth = currentMonth;
+      await _initializeNewGroup(newMonth);
+    } else {
+      // Get the latest month and calculate next month
+      String latestMonth = availableMonths.last;
+      String newMonth = _getNextMonth(latestMonth);
 
-    String latestMonth = availableMonths.last;
-    String newMonth = _getNextMonth(latestMonth);
+      // Get all groups
+      final groupsCollection = FirebaseFirestore.instance.collection('groups1');
+      final groups = await groupsCollection.get();
 
-    // Update all existing members to include the new month with a default payment status of false
-    QuerySnapshot snapshot = await membersCollection.get();
-    for (var member in snapshot.docs) {
-      await membersCollection.doc(member.id).update({
-        'payments.$newMonth': false,
+      // Update all groups
+      for (var group in groups.docs) {
+        final membersRef = group.reference.collection('members');
+        final members = await membersRef.get();
+
+        // Update all members in this group
+        for (var member in members.docs) {
+          await membersRef.doc(member.id).update({
+            'payments.$newMonth': false,
+          });
+        }
+      }
+
+      // Update UI
+      setState(() {
+        availableMonths.add(newMonth);
+        selectedMonth = newMonth;
       });
     }
+  }
 
-    // Update UI
+  // New method to initialize a new group
+  Future<void> _initializeNewGroup(String initialMonth) async {
     setState(() {
-      availableMonths.add(newMonth);
-      selectedMonth = newMonth; // Select the newly added month
+      availableMonths = [initialMonth];
+      selectedMonth = initialMonth;
     });
   }
 
@@ -371,6 +462,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   }
 
   Future<void> _mentionPendingUsers() async {
+    // Fetch latest pending members before proceeding
+    await _fetchPendingMembers();
+
     if (pendingMembersMap.isEmpty) {
       _showSnackBar('No pending users to mention');
       return;
@@ -384,6 +478,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       // Find a pending member to get their groupId
       final pendingMember = await membersCollection
           .where('phoneNumber', whereIn: pendingMembersMap)
+          .where('payments.$selectedMonth', isEqualTo: false)
           .limit(1)
           .get();
 
@@ -413,6 +508,60 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
+  Future<void> _mentionPaidUsers() async {
+    if (isLoading) return;
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      // Get paid members who haven't been forwarded yet
+      final paidMembers = await membersCollection
+          .where('payments.$selectedMonth', isEqualTo: true)
+          .where('forwarded', isEqualTo: false)
+          .get();
+
+      if (paidMembers.docs.isEmpty) {
+        _showSnackBar('No new paid members to forward');
+        return;
+      }
+
+      // Get groupId from the first member
+      final String memberGroupId = paidMembers.docs.first['groupId'];
+
+      // Extract phone numbers
+      final userNumbers = paidMembers.docs
+          .map((doc) => doc['phoneNumber'] as String)
+          .map((phone) => phone.replaceAll(RegExp(r'\D'), ''))
+          .toList();
+
+      // Send the post request
+      await sendPostRequest(
+        "mention-users",
+        body: {
+          "groupId": memberGroupId,
+          "userNumbers": userNumbers,
+          "messageType": "paid",
+        },
+      );
+
+      // Mark these members as forwarded
+      for (var doc in paidMembers.docs) {
+        await doc.reference.update({'forwarded': true});
+      }
+
+      _showSnackBar(
+          'Successfully forwarded ${userNumbers.length} paid members');
+    } catch (error) {
+      _showSnackBar('Error forwarding paid members: ${error.toString()}');
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
   // Show a snack bar with the response message
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -422,6 +571,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isInitializing) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('Members of ${widget.groupName}'),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          elevation: 0,
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Members of ${widget.groupName}'),
@@ -506,6 +668,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   ),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: isLoading ? null : _mentionPaidUsers,
+                  icon: isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check_circle),
+                  label: Text(
+                    isLoading
+                        ? 'Forwarding Paid Members...'
+                        : 'Forward Paid Members',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primaryContainer,
                   ),
                 ),
               ],
@@ -746,6 +929,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   'phoneNumber': phone,
                   'groupId': groupId,
                   'payments': initialPayments,
+                  'forwarded': false,
                 });
 
                 Navigator.pop(context);
@@ -947,8 +1131,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   }
 
   void _togglePaymentStatus(DocumentSnapshot member) {
+    final bool currentStatus = member['payments'][selectedMonth] ?? false;
+    final bool newStatus = !currentStatus;
+
     membersCollection.doc(member.id).update({
-      'payments.$selectedMonth': !(member['payments'][selectedMonth] ?? false),
+      'payments.$selectedMonth': newStatus,
+      // Reset forwarded status when marking as paid
+      if (newStatus) 'forwarded': false,
+    }).then((_) {
+      // Fetch pending members after payment status is updated
+      _fetchPendingMembers();
     });
   }
 
