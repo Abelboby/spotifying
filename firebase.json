@@ -1,0 +1,1 @@
+{"flutter":{"platforms":{"android":{"default":{"projectId":"spotify-payments-track","appId":"1:342438840194:android:08100ecf9d30661347f19b","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"spotify-payments-track","configurations":{"android":"1:342438840194:android:08100ecf9d30661347f19b"}}}}}}
