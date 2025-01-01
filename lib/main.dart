@@ -435,15 +435,32 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       await _fetchAvailableMonths();
       await _fetchPendingMembers();
 
-      // Set current month as default if not selected
+      // Set appropriate month based on current date
       if (selectedMonth == null && availableMonths.isNotEmpty) {
         final now = DateTime.now();
-        final currentMonth =
-            '${now.year}-${now.month.toString().padLeft(2, '0')}';
-        if (availableMonths.contains(currentMonth)) {
-          selectedMonth = currentMonth;
+        String targetMonth;
+
+        if (now.day < 20) {
+          // If before 20th, use previous month
+          final prevMonth = DateTime(now.year, now.month - 1);
+          targetMonth =
+              '${prevMonth.year}-${prevMonth.month.toString().padLeft(2, '0')}';
+        } else {
+          // If 20th or later, use current month
+          targetMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+        }
+
+        print('Current date: ${now.toString()}');
+        print('Target month based on 20th rule: $targetMonth');
+
+        // Use target month if available, otherwise use latest available month
+        if (availableMonths.contains(targetMonth)) {
+          selectedMonth = targetMonth;
+          print('Selected target month: $targetMonth');
         } else {
           selectedMonth = availableMonths.last;
+          print(
+              'Target month not available, using latest month: ${availableMonths.last}');
         }
       }
 
@@ -482,9 +499,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     final allMonths = <String>{};
 
     if (snapshot.docs.isEmpty) {
-      // If no members exist, initialize with current month
-      String currentMonth = DateTime.now().toString().substring(0, 7);
-      allMonths.add(currentMonth);
+      // If no members exist, initialize with appropriate month based on 20th rule
+      final now = DateTime.now();
+      String defaultMonth;
+      if (now.day < 20) {
+        // If before 20th, use previous month
+        final prevMonth = DateTime(now.year, now.month - 1);
+        defaultMonth =
+            '${prevMonth.year}-${prevMonth.month.toString().padLeft(2, '0')}';
+      } else {
+        // If 20th or later, use current month
+        defaultMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+      }
+      allMonths.add(defaultMonth);
     } else {
       for (var member in snapshot.docs) {
         final payments = member['payments'] ?? {};
@@ -495,12 +522,37 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     if (mounted) {
       setState(() {
         availableMonths = allMonths.toList()..sort();
-        String currentMonth = DateTime.now().toString().substring(0, 7);
+
+        // Set default month based on 20th rule
+        final now = DateTime.now();
+        String targetMonth;
+
+        if (now.day < 20) {
+          // If before 20th, use previous month
+          if (now.month == 1) {
+            // If January, go back to December of previous year
+            targetMonth = '${now.year - 1}-12';
+          } else {
+            // Otherwise use previous month of same year
+            targetMonth =
+                '${now.year}-${(now.month - 1).toString().padLeft(2, '0')}';
+          }
+        } else {
+          // If 20th or later, use current month
+          targetMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+        }
+
+        print('Current date: ${now.toString()}');
+        print('Target month based on 20th rule: $targetMonth');
+
+        // Use target month if available, otherwise use latest available month
         selectedMonth = availableMonths.isNotEmpty
-            ? availableMonths.contains(currentMonth)
-                ? currentMonth
+            ? availableMonths.contains(targetMonth)
+                ? targetMonth
                 : availableMonths.last
-            : currentMonth;
+            : targetMonth;
+
+        print('Selected month: $selectedMonth');
       });
     }
   }
@@ -766,9 +818,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           continue;
         }
 
-        final day = dateMatch.group(1);
+        final day = int.tryParse(dateMatch.group(1) ?? '');
         final monthStr = dateMatch.group(2)?.toLowerCase();
-        final year = dateMatch.group(3);
+        final year = int.tryParse(dateMatch.group(3) ?? '');
         final amount = amountMatch.group(1);
         final sender = senderMatch.group(1)?.trim();
 
@@ -801,14 +853,32 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         final month = monthMap[monthStr];
         if (month == null) continue;
 
-        // Format to YYYY-MM
-        final fullYear = 2000 + int.parse(year);
-        final messageMonth = '$fullYear-${month.toString().padLeft(2, '0')}';
+        // Convert to full year (assuming 20xx)
+        final fullYear = 2000 + year;
 
-        // Check if message is from selected month
-        if (messageMonth != selectedMonth) {
+        // Determine which month this payment belongs to based on the date
+        String paymentMonth;
+        if (day >= 20) {
+          // If date is 20th or later, it belongs to current month
+          paymentMonth = '$fullYear-${month.toString().padLeft(2, '0')}';
+        } else {
+          // If date is before 20th, it belongs to previous month
+          if (month == 1) {
+            // If it's January, previous month is December of last year
+            paymentMonth = '${fullYear - 1}-12';
+          } else {
+            // Otherwise, just previous month of same year
+            paymentMonth =
+                '$fullYear-${(month - 1).toString().padLeft(2, '0')}';
+          }
+        }
+
+        print('Payment belongs to month: $paymentMonth');
+
+        // Check if message is for selected month
+        if (paymentMonth != selectedMonth) {
           print(
-              'Skipping message - Wrong month ($messageMonth != $selectedMonth)');
+              'Skipping message - Wrong month ($paymentMonth != $selectedMonth)');
           continue;
         }
 
