@@ -281,13 +281,118 @@ class _BotStatusButton extends StatelessWidget {
               Icons.timer,
             ),
             const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                onRefresh();
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh Status'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    onRefresh();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh Status'),
+                ),
+                const SizedBox(width: 16),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: Row(
+                          children: [
+                            Icon(
+                              Icons.warning,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('Reinitialize Bot?'),
+                          ],
+                        ),
+                        content: const Text(
+                          'This will restart the WhatsApp client. The bot will be temporarily unavailable during reinitialization.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          FilledButton(
+                            onPressed: () async {
+                              Navigator.pop(
+                                  context); // Close confirmation dialog
+                              Navigator.pop(context); // Close bot details
+
+                              // Show loading dialog
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (context) => const Center(
+                                  child: Card(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          CircularProgressIndicator(),
+                                          SizedBox(height: 16),
+                                          Text(
+                                              'Reinitializing WhatsApp Bot...'),
+                                          SizedBox(height: 8),
+                                          Text(
+                                            'This may take a few minutes',
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+
+                              try {
+                                final url = Uri.parse(
+                                    "https://nodejs-test-hosting.onrender.com/reinitialize");
+                                final response = await http.post(url);
+                                final data = jsonDecode(response.body);
+
+                                Navigator.pop(context); // Close loading dialog
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(data['message']),
+                                    backgroundColor: data['success']
+                                        ? Colors.green
+                                        : Colors.red,
+                                  ),
+                                );
+
+                                if (data['success']) {
+                                  onRefresh(); // Refresh status after successful reinitialization
+                                }
+                              } catch (e) {
+                                Navigator.pop(context); // Close loading dialog
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            style: FilledButton.styleFrom(
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.error,
+                            ),
+                            child: const Text('Reinitialize'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.restart_alt),
+                  label: const Text('Reinitialize Bot'),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
           ],
