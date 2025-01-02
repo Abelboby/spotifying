@@ -359,95 +359,152 @@ class _BotStatusButton extends StatelessWidget {
         onTap: () {
           showModalBottomSheet(
             context: context,
-            builder: (context) => SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    margin: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: getStatusColor(status, isInitialized)
-                          .withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Icon(
-                        getStatusIcon(status, isInitialized),
-                        size: 48,
-                        color: getStatusColor(status, isInitialized),
+            builder: (context) => StatefulBuilder(
+              builder: (context, setState) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 120,
+                      height: 120,
+                      margin: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: getStatusColor(status, isInitialized)
+                            .withOpacity(0.1),
+                        shape: BoxShape.circle,
                       ),
-                    ),
-                  ),
-                  Text(
-                    getStatusText(status, isInitialized),
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: getStatusColor(status, isInitialized),
-                          fontWeight: FontWeight.w600,
+                      child: Center(
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.0, end: 1.0),
+                          duration: const Duration(seconds: 1),
+                          builder: (context, value, child) {
+                            return Transform.rotate(
+                              angle: status == 'initializing' ||
+                                      (status == 'running' && !isInitialized)
+                                  ? value * 2 * 3.14159
+                                  : 0,
+                              child: Icon(
+                                getStatusIcon(status, isInitialized),
+                                size: 48,
+                                color: getStatusColor(status, isInitialized),
+                              ),
+                            );
+                          },
                         ),
-                  ),
-                  if (lastUpdated != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatLastUpdated(),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
+                      ),
                     ),
+                    AnimatedDefaultTextStyle(
+                      duration: const Duration(milliseconds: 200),
+                      style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                            color: getStatusColor(status, isInitialized),
+                            fontWeight: FontWeight.w600,
+                          ),
+                      child: Text(getStatusText(status, isInitialized)),
+                    ),
+                    if (lastUpdated != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _formatLastUpdated(),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: Column(
+                        key: ValueKey('$status-$isInitialized'),
+                        children: [
+                          _buildDetailRow(
+                            context,
+                            'Status',
+                            status,
+                            Icons.info,
+                          ),
+                          _buildDetailRow(
+                            context,
+                            'WhatsApp Client',
+                            isInitialized ? 'Initialized' : 'Not Initialized',
+                            Icons.chat,
+                          ),
+                          if (status == 'running') ...[
+                            _buildDetailRow(
+                              context,
+                              'Uptime',
+                              _formatUptime(uptime),
+                              Icons.timer,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            onRefresh();
+                          },
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Refresh Status'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            onReinitialize();
+                          },
+                          icon: const Icon(
+                            Icons.restart_alt,
+                            color: Colors.orange,
+                          ),
+                          label: const Text(
+                            'Reinitialize Bot',
+                            style: TextStyle(color: Colors.orange),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.orange),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            onTest();
+                          },
+                          icon: Icon(
+                            Icons.bug_report,
+                            color: Theme.of(context).colorScheme.tertiary,
+                          ),
+                          label: Text(
+                            'Test Bot',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.tertiary,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                              color: Theme.of(context).colorScheme.tertiary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
                   ],
-                  const SizedBox(height: 24),
-                  _buildDetailRow(
-                    context,
-                    'Status',
-                    status,
-                    Icons.info,
-                  ),
-                  _buildDetailRow(
-                    context,
-                    'WhatsApp Client',
-                    isInitialized ? 'Initialized' : 'Not Initialized',
-                    Icons.chat,
-                  ),
-                  _buildDetailRow(
-                    context,
-                    'Uptime',
-                    _formatUptime(uptime),
-                    Icons.timer,
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          onRefresh();
-                        },
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Refresh Status'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: onReinitialize,
-                        icon: const Icon(Icons.restart_alt),
-                        label: const Text('Reinitialize Bot'),
-                      ),
-                      const SizedBox(width: 16),
-                      OutlinedButton.icon(
-                        onPressed: onTest,
-                        icon: const Icon(Icons.bug_report),
-                        label: const Text('Test Bot'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                ),
               ),
             ),
           );
@@ -816,7 +873,11 @@ class GroupListScreen extends StatelessWidget {
               Future.delayed(const Duration(seconds: 1), () {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (context) => GroupListScreen()),
+                  MaterialPageRoute(
+                    builder: (context) => const BotStatusWrapper(
+                      child: SmsPermissionWrapper(),
+                    ),
+                  ),
                 );
               });
             },
