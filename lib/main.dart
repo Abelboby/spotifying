@@ -56,6 +56,9 @@ class _BotStatusWrapperState extends State<BotStatusWrapper> {
   bool _isInitialized = false;
   bool _isFirstCheck = true;
   double _uptime = 0;
+  DateTime? _lastUpdated;
+  bool _isReinitializing = false;
+  bool _isStartingBot = false;
 
   @override
   void initState() {
@@ -98,6 +101,9 @@ class _BotStatusWrapperState extends State<BotStatusWrapper> {
             FilledButton(
               onPressed: () {
                 Navigator.pop(context);
+                setState(() {
+                  _isStartingBot = true;
+                });
                 _startBotStatusCheck();
               },
               child: const Text('Start Bot'),
@@ -119,62 +125,74 @@ class _BotStatusWrapperState extends State<BotStatusWrapper> {
           _botStatus = data['status'] ?? 'offline';
           _isInitialized = data['initialized'] ?? false;
           _uptime = (data['uptime'] ?? 0).toDouble();
+          _lastUpdated = DateTime.now();
+          _isStartingBot = false;
+          _isReinitializing = false;
 
-          // If bot is running and initialized, stop the timer
+          // If bot is running and initialized, change timer to 1 minute
           if (_botStatus == 'running' && _isInitialized) {
             _statusCheckTimer?.cancel();
+            _statusCheckTimer =
+                Timer.periodic(const Duration(minutes: 1), (timer) {
+              _checkBotStatus();
+            });
           }
         });
       }
     } catch (e) {
       setState(() {
         _botStatus = 'error';
+        _lastUpdated = DateTime.now();
+        _isStartingBot = false;
+        _isReinitializing = false;
       });
     }
   }
 
   void _startBotStatusCheck() {
-    // Show initial loading dialog for first check
-    if (_isFirstCheck) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Starting WhatsApp Bot...'),
-                  SizedBox(height: 8),
-                  Text(
-                    'This might take a few minutes',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Make initial check
-    _checkBotStatus().then((_) {
-      if (_isFirstCheck) {
-        Navigator.of(context).pop(); // Dismiss loading dialog
-        _isFirstCheck = false;
-      }
-    });
-
-    // Start periodic checks
+    _checkBotStatus();
     _statusCheckTimer?.cancel();
     _statusCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       _checkBotStatus();
     });
+  }
+
+  Future<void> sendPostRequest(String endpoint,
+      {Map<String, dynamic>? body}) async {
+    try {
+      final url =
+          Uri.parse("https://nodejs-test-hosting.onrender.com/$endpoint");
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: body != null ? jsonEncode(body) : null,
+      );
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Success: ${response.body}"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error: ${response.statusCode} - ${response.body}"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -192,7 +210,101 @@ class _BotStatusWrapperState extends State<BotStatusWrapper> {
               status: _botStatus,
               isInitialized: _isInitialized,
               uptime: _uptime,
+              lastUpdated: _lastUpdated,
+              isReinitializing: _isReinitializing,
+              isStartingBot: _isStartingBot,
               onRefresh: _startBotStatusCheck,
+              onReinitialize: () async {
+                final shouldReinitialize = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Row(
+                      children: [
+                        Icon(
+                          Icons.warning,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('Reinitialize Bot?'),
+                      ],
+                    ),
+                    content: const Text(
+                      'This will restart the WhatsApp client. The bot will be temporarily unavailable during reinitialization.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Theme.of(context).colorScheme.error,
+                        ),
+                        child: const Text('Reinitialize'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (shouldReinitialize == true) {
+                  setState(() {
+                    _isReinitializing = true;
+                  });
+
+                  try {
+                    final url = Uri.parse(
+                        "https://nodejs-test-hosting.onrender.com/reinitialize");
+                    final response = await http.post(url);
+                    final data = jsonDecode(response.body);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(data['message']),
+                        backgroundColor:
+                            data['success'] ? Colors.green : Colors.red,
+                      ),
+                    );
+
+                    if (data['success']) {
+                      _startBotStatusCheck();
+                    } else {
+                      setState(() {
+                        _isReinitializing = false;
+                      });
+                    }
+                  } catch (e) {
+                    setState(() {
+                      _isReinitializing = false;
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              onTest: () async {
+                try {
+                  await sendPostRequest(
+                    "mention-users",
+                    body: {
+                      "groupId": "120363368473110684@g.us",
+                      "userNumbers": ['917034358874', '917012259968'],
+                      "messageType": "paid",
+                    },
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Test failed: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
             ),
           ],
         ),
@@ -205,14 +317,211 @@ class _BotStatusButton extends StatelessWidget {
   final String status;
   final bool isInitialized;
   final double uptime;
+  final DateTime? lastUpdated;
+  final bool isReinitializing;
+  final bool isStartingBot;
   final VoidCallback onRefresh;
+  final VoidCallback onReinitialize;
+  final VoidCallback onTest;
 
   const _BotStatusButton({
     required this.status,
     required this.isInitialized,
     required this.uptime,
+    required this.lastUpdated,
+    required this.isReinitializing,
+    required this.isStartingBot,
     required this.onRefresh,
+    required this.onReinitialize,
+    required this.onTest,
   });
+
+  String _formatLastUpdated() {
+    if (lastUpdated == null) return '';
+    final now = DateTime.now();
+    final difference = now.difference(lastUpdated!);
+
+    if (difference.inSeconds < 60) {
+      return 'Updated just now';
+    } else if (difference.inMinutes < 60) {
+      return 'Updated ${difference.inMinutes}m ago';
+    } else {
+      return 'Updated ${difference.inHours}h ago';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: getStatusColor(status, isInitialized).withOpacity(0.1),
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 120,
+                    height: 120,
+                    margin: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: getStatusColor(status, isInitialized)
+                          .withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Icon(
+                        getStatusIcon(status, isInitialized),
+                        size: 48,
+                        color: getStatusColor(status, isInitialized),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    getStatusText(status, isInitialized),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: getStatusColor(status, isInitialized),
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  if (lastUpdated != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatLastUpdated(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  _buildDetailRow(
+                    context,
+                    'Status',
+                    status,
+                    Icons.info,
+                  ),
+                  _buildDetailRow(
+                    context,
+                    'WhatsApp Client',
+                    isInitialized ? 'Initialized' : 'Not Initialized',
+                    Icons.chat,
+                  ),
+                  _buildDetailRow(
+                    context,
+                    'Uptime',
+                    _formatUptime(uptime),
+                    Icons.timer,
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          onRefresh();
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Refresh Status'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: onReinitialize,
+                        icon: const Icon(Icons.restart_alt),
+                        label: const Text('Reinitialize Bot'),
+                      ),
+                      const SizedBox(width: 16),
+                      OutlinedButton.icon(
+                        onPressed: onTest,
+                        icon: const Icon(Icons.bug_report),
+                        label: const Text('Test Bot'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Animated Icon
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(seconds: 1),
+                builder: (context, value, child) {
+                  return Transform.rotate(
+                    angle: isStartingBot ||
+                            isReinitializing ||
+                            status == 'initializing' ||
+                            (status == 'running' && !isInitialized)
+                        ? value * 2 * 3.14159
+                        : 0,
+                    child: Icon(
+                      getStatusIcon(status, isInitialized),
+                      color: getStatusColor(status, isInitialized),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 8),
+              // Status Text with Dot Animation
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        isStartingBot
+                            ? 'Starting Bot'
+                            : isReinitializing
+                                ? 'Reinitializing'
+                                : getStatusText(status, isInitialized),
+                        style: TextStyle(
+                          color: getStatusColor(status, isInitialized),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (isStartingBot ||
+                          isReinitializing ||
+                          status == 'initializing' ||
+                          (status == 'running' && !isInitialized)) ...[
+                        const SizedBox(width: 4),
+                        _LoadingDots(
+                            color: getStatusColor(status, isInitialized)),
+                      ],
+                    ],
+                  ),
+                  if (lastUpdated != null)
+                    Text(
+                      _formatLastUpdated(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                            fontSize: 10,
+                          ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   String _formatUptime(double seconds) {
     if (seconds < 60) {
@@ -229,176 +538,6 @@ class _BotStatusButton extends StatelessWidget {
       final hours = ((seconds % 86400) / 3600).floor();
       return '$days days ${hours > 0 ? '$hours hrs' : ''}';
     }
-  }
-
-  void _showBotDetails(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              margin: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: getStatusColor(status, isInitialized).withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Icon(
-                  getStatusIcon(status, isInitialized),
-                  size: 48,
-                  color: getStatusColor(status, isInitialized),
-                ),
-              ),
-            ),
-            Text(
-              getStatusText(status, isInitialized),
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: getStatusColor(status, isInitialized),
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 24),
-            _buildDetailRow(
-              context,
-              'Status',
-              status,
-              Icons.info,
-            ),
-            _buildDetailRow(
-              context,
-              'WhatsApp Client',
-              isInitialized ? 'Initialized' : 'Not Initialized',
-              Icons.chat,
-            ),
-            _buildDetailRow(
-              context,
-              'Uptime',
-              _formatUptime(uptime),
-              Icons.timer,
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FilledButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    onRefresh();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh Status'),
-                ),
-                const SizedBox(width: 16),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: Row(
-                          children: [
-                            Icon(
-                              Icons.warning,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text('Reinitialize Bot?'),
-                          ],
-                        ),
-                        content: const Text(
-                          'This will restart the WhatsApp client. The bot will be temporarily unavailable during reinitialization.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () async {
-                              Navigator.pop(
-                                  context); // Close confirmation dialog
-                              Navigator.pop(context); // Close bot details
-
-                              // Show loading dialog
-                              showDialog(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (context) => const Center(
-                                  child: Card(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(16.0),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          CircularProgressIndicator(),
-                                          SizedBox(height: 16),
-                                          Text(
-                                              'Reinitializing WhatsApp Bot...'),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            'This may take a few minutes',
-                                            style: TextStyle(fontSize: 12),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-
-                              try {
-                                final url = Uri.parse(
-                                    "https://nodejs-test-hosting.onrender.com/reinitialize");
-                                final response = await http.post(url);
-                                final data = jsonDecode(response.body);
-
-                                Navigator.pop(context); // Close loading dialog
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(data['message']),
-                                    backgroundColor: data['success']
-                                        ? Colors.green
-                                        : Colors.red,
-                                  ),
-                                );
-
-                                if (data['success']) {
-                                  onRefresh(); // Refresh status after successful reinitialization
-                                }
-                              } catch (e) {
-                                Navigator.pop(context); // Close loading dialog
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Error: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            },
-                            style: FilledButton.styleFrom(
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.error,
-                            ),
-                            child: const Text('Reinitialize'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.restart_alt),
-                  label: const Text('Reinitialize Bot'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildDetailRow(
@@ -480,61 +619,6 @@ class _BotStatusButton extends StatelessWidget {
     if (isInitializing) return Icons.rocket_launch;
     if (isRunning && !isInitialized) return Icons.downloading;
     return Icons.check_circle;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: getStatusColor(status, isInitialized).withOpacity(0.1),
-      borderRadius: BorderRadius.circular(24),
-      child: InkWell(
-        onTap: () => _showBotDetails(context),
-        borderRadius: BorderRadius.circular(24),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Animated Icon
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(seconds: 1),
-                builder: (context, value, child) {
-                  return Transform.rotate(
-                    angle: status == 'initializing' ||
-                            (status == 'running' && !isInitialized)
-                        ? value * 2 * 3.14159
-                        : 0,
-                    child: Icon(
-                      getStatusIcon(status, isInitialized),
-                      color: getStatusColor(status, isInitialized),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 8),
-              // Status Text with Dot Animation
-              Row(
-                children: [
-                  Text(
-                    getStatusText(status, isInitialized),
-                    style: TextStyle(
-                      color: getStatusColor(status, isInitialized),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (status == 'initializing' ||
-                      (status == 'running' && !isInitialized)) ...[
-                    const SizedBox(width: 4),
-                    _LoadingDots(color: getStatusColor(status, isInitialized)),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -1346,6 +1430,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   String _botStatus = 'offline';
   bool _isInitialized = false;
   double _uptime = 0;
+  DateTime? _lastUpdated;
+  bool _isReinitializing = false;
+  bool _isStartingBot = false;
 
   @override
   void initState() {
@@ -1598,12 +1685,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       );
 
       if (response.statusCode == 200) {
-        _showSnackBar("Success: ${response.body}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Success: ${response.body}"),
+            backgroundColor: Colors.green,
+          ),
+        );
       } else {
-        _showSnackBar("Error: ${response.statusCode} - ${response.body}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error: ${response.statusCode} - ${response.body}"),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      _showSnackBar("Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -2351,7 +2453,101 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               status: _botStatus,
               isInitialized: _isInitialized,
               uptime: _uptime,
+              lastUpdated: _lastUpdated,
+              isReinitializing: _isReinitializing,
+              isStartingBot: _isStartingBot,
               onRefresh: _startBotStatusCheck,
+              onReinitialize: () async {
+                final shouldReinitialize = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Row(
+                      children: [
+                        Icon(
+                          Icons.warning,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('Reinitialize Bot?'),
+                      ],
+                    ),
+                    content: const Text(
+                      'This will restart the WhatsApp client. The bot will be temporarily unavailable during reinitialization.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Theme.of(context).colorScheme.error,
+                        ),
+                        child: const Text('Reinitialize'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (shouldReinitialize == true) {
+                  setState(() {
+                    _isReinitializing = true;
+                  });
+
+                  try {
+                    final url = Uri.parse(
+                        "https://nodejs-test-hosting.onrender.com/reinitialize");
+                    final response = await http.post(url);
+                    final data = jsonDecode(response.body);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(data['message']),
+                        backgroundColor:
+                            data['success'] ? Colors.green : Colors.red,
+                      ),
+                    );
+
+                    if (data['success']) {
+                      _startBotStatusCheck();
+                    } else {
+                      setState(() {
+                        _isReinitializing = false;
+                      });
+                    }
+                  } catch (e) {
+                    setState(() {
+                      _isReinitializing = false;
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              onTest: () async {
+                try {
+                  await sendPostRequest(
+                    "mention-users",
+                    body: {
+                      "groupId": "120363368473110684@g.us",
+                      "userNumbers": ['917034358874', '917012259968'],
+                      "messageType": "paid",
+                    },
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Test failed: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
             ),
           ],
         ),
