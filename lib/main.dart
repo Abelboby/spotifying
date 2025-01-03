@@ -887,7 +887,9 @@ class GroupListScreen extends StatelessWidget {
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: groupsCollection.snapshots(),
+        stream: groupsCollection
+            .orderBy('groupName', descending: false)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             print('Loading groups...');
@@ -1322,17 +1324,32 @@ class GroupListScreen extends StatelessWidget {
                       await groupsCollection.add({'groupName': groupName});
                   print('Group created with ID: ${docRef.id}');
 
-                  // Initialize with current month
-                  String currentMonth =
-                      DateTime.now().toString().substring(0, 7);
-                  print('Initializing with month: $currentMonth');
+                  // Initialize with correct month based on 20th rule
+                  final now = DateTime.now();
+                  String initialMonth;
+                  if (now.day < 20) {
+                    // If before 20th, use previous month
+                    if (now.month == 1) {
+                      // If January, go back to December of previous year
+                      initialMonth = '${now.year - 1}-12';
+                    } else {
+                      // Otherwise use previous month of same year
+                      initialMonth =
+                          '${now.year}-${(now.month - 1).toString().padLeft(2, '0')}';
+                    }
+                  } else {
+                    // If 20th or later, use current month
+                    initialMonth =
+                        '${now.year}-${now.month.toString().padLeft(2, '0')}';
+                  }
+                  print('Initializing with month: $initialMonth');
 
                   // Create a dummy document to initialize the members collection
                   await docRef.collection('members').add({
                     'name': 'Dummy',
                     'phoneNumber': '0000000000',
                     'groupId': docRef.id,
-                    'payments': {currentMonth: false},
+                    'payments': {initialMonth: false},
                     'forwarded': false,
                   });
                   print('Initialized members collection');
@@ -2961,6 +2978,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   for (var month in availableMonths) month: false,
                 };
 
+                // Initialize an empty paymentNotes map
+                final Map<String, String> initialPaymentNotes = {};
+
                 // Add the new member to Firestore
                 await FirebaseFirestore.instance
                     .collection('groups1')
@@ -2973,6 +2993,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   'bankingName': bankingName.isNotEmpty ? bankingName : null,
                   'paymentAmount': amount,
                   'payments': initialPayments,
+                  'paymentNotes': initialPaymentNotes,
                   'forwarded': false,
                 });
 
