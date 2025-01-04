@@ -938,6 +938,7 @@ class GroupListScreen extends StatelessWidget {
 
           print('Found ${snapshot.data!.docs.length} groups');
           final groups = snapshot.data!.docs;
+
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: groups.length,
@@ -945,174 +946,257 @@ class GroupListScreen extends StatelessWidget {
               final group = groups[index];
               print('Building group card: ${group['groupName']}');
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Material(
-                  borderRadius: BorderRadius.circular(12),
-                  color: Theme.of(context).colorScheme.surface,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _navigateToGroupDetails(context, group),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primaryContainer,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Icon(
-                                Icons.album,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  group['groupName'],
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('groups1')
+                    .doc(group.id)
+                    .collection('members')
+                    .snapshots(),
+                builder: (context, membersSnapshot) {
+                  // Calculate payment status
+                  int totalMembers = 0;
+                  int pendingMembers = 0;
+                  String currentMonth = '';
+
+                  if (membersSnapshot.hasData) {
+                    final now = DateTime.now();
+                    if (now.day < 20) {
+                      // If before 20th, use previous month
+                      final prevMonth = DateTime(now.year, now.month - 1);
+                      currentMonth =
+                          '${prevMonth.year}-${prevMonth.month.toString().padLeft(2, '0')}';
+                    } else {
+                      // If 20th or later, use current month
+                      currentMonth =
+                          '${now.year}-${now.month.toString().padLeft(2, '0')}';
+                    }
+
+                    totalMembers = membersSnapshot.data!.docs.length;
+                    pendingMembers = membersSnapshot.data!.docs
+                        .where(
+                            (doc) => !(doc['payments'][currentMonth] ?? false))
+                        .length;
+                  }
+
+                  final bool allPaid = pendingMembers == 0 && totalMembers > 0;
+                  final bool hasPending = pendingMembers > 0;
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Material(
+                      borderRadius: BorderRadius.circular(12),
+                      color: Theme.of(context).colorScheme.surface,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _navigateToGroupDetails(context, group),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.album,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Tap to manage members',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .outline,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      group['groupName'],
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.more_vert,
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
-                            onPressed: () {
-                              showModalBottomSheet(
-                                context: context,
-                                builder: (context) => SafeArea(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.all(16),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 40,
-                                              height: 40,
-                                              decoration: BoxDecoration(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primaryContainer,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: Center(
-                                                child: Icon(
-                                                  Icons.album,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onPrimaryContainer,
+                                    ),
+                                    if (membersSnapshot.hasData) ...[
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            allPaid
+                                                ? Icons.check_circle
+                                                : Icons.pending,
+                                            size: 16,
+                                            color: allPaid
+                                                ? Colors.green
+                                                : hasPending
+                                                    ? Colors.orange
+                                                    : Theme.of(context)
+                                                        .colorScheme
+                                                        .outline,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            allPaid
+                                                ? 'All Paid'
+                                                : hasPending
+                                                    ? '$pendingMembers pending'
+                                                    : 'No members',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: allPaid
+                                                      ? Colors.green
+                                                      : hasPending
+                                                          ? Colors.orange
+                                                          : Theme.of(context)
+                                                              .colorScheme
+                                                              .outline,
+                                                  fontWeight: FontWeight.w500,
                                                 ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    group['groupName'],
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 16,
-                                                    ),
+                                          ),
+                                          if (totalMembers > 0) ...[
+                                            Text(
+                                              ' • ${totalMembers} member${totalMembers != 1 ? 's' : ''}',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .outline,
                                                   ),
-                                                  Text(
-                                                    'Spotify Family Plan',
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          color:
-                                                              Theme.of(context)
-                                                                  .colorScheme
-                                                                  .outline,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ),
                                             ),
                                           ],
-                                        ),
+                                        ],
                                       ),
-                                      const Divider(),
-                                      ListTile(
-                                        leading: Icon(
-                                          Icons.edit,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                        ),
-                                        title: const Text('Rename Plan'),
-                                        onTap: () {
-                                          Navigator.pop(context);
-                                          _showEditGroupDialog(context, group);
-                                        },
-                                      ),
-                                      ListTile(
-                                        leading: const Icon(
-                                          Icons.delete_forever,
-                                          color: Colors.red,
-                                        ),
-                                        title: const Text(
-                                          'Delete Plan',
-                                          style: TextStyle(color: Colors.red),
-                                        ),
-                                        subtitle: const Text(
-                                          'This action cannot be undone',
-                                          style: TextStyle(color: Colors.red),
-                                        ),
-                                        onTap: () {
-                                          Navigator.pop(context);
-                                          _showDeleteGroupDialog(
-                                              context, group);
-                                        },
-                                      ),
-                                      const SizedBox(height: 8),
                                     ],
-                                  ),
+                                  ],
                                 ),
-                              );
-                            },
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.more_vert,
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                                onPressed: () {
+                                  showModalBottomSheet(
+                                    context: context,
+                                    builder: (context) => SafeArea(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 40,
+                                                  height: 40,
+                                                  decoration: BoxDecoration(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primaryContainer,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: Center(
+                                                    child: Icon(
+                                                      Icons.album,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onPrimaryContainer,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        group['groupName'],
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 16,
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        'Spotify Family Plan',
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.copyWith(
+                                                              color: Theme.of(
+                                                                      context)
+                                                                  .colorScheme
+                                                                  .outline,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const Divider(),
+                                          ListTile(
+                                            leading: Icon(
+                                              Icons.edit,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                            title: const Text('Rename Plan'),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _showEditGroupDialog(
+                                                  context, group);
+                                            },
+                                          ),
+                                          ListTile(
+                                            leading: const Icon(
+                                              Icons.delete_forever,
+                                              color: Colors.red,
+                                            ),
+                                            title: const Text(
+                                              'Delete Plan',
+                                              style:
+                                                  TextStyle(color: Colors.red),
+                                            ),
+                                            subtitle: const Text(
+                                              'This action cannot be undone',
+                                              style:
+                                                  TextStyle(color: Colors.red),
+                                            ),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _showDeleteGroupDialog(
+                                                  context, group);
+                                            },
+                                          ),
+                                          const SizedBox(height: 8),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               );
             },
           );
@@ -1320,39 +1404,8 @@ class GroupListScreen extends StatelessWidget {
                 print('Creating new group: $groupName');
                 try {
                   // Create the group
-                  final docRef =
-                      await groupsCollection.add({'groupName': groupName});
-                  print('Group created with ID: ${docRef.id}');
-
-                  // Initialize with correct month based on 20th rule
-                  final now = DateTime.now();
-                  String initialMonth;
-                  if (now.day < 20) {
-                    // If before 20th, use previous month
-                    if (now.month == 1) {
-                      // If January, go back to December of previous year
-                      initialMonth = '${now.year - 1}-12';
-                    } else {
-                      // Otherwise use previous month of same year
-                      initialMonth =
-                          '${now.year}-${(now.month - 1).toString().padLeft(2, '0')}';
-                    }
-                  } else {
-                    // If 20th or later, use current month
-                    initialMonth =
-                        '${now.year}-${now.month.toString().padLeft(2, '0')}';
-                  }
-                  print('Initializing with month: $initialMonth');
-
-                  // Create a dummy document to initialize the members collection
-                  await docRef.collection('members').add({
-                    'name': 'Dummy',
-                    'phoneNumber': '0000000000',
-                    'groupId': docRef.id,
-                    'payments': {initialMonth: false},
-                    'forwarded': false,
-                  });
-                  print('Initialized members collection');
+                  await groupsCollection.add({'groupName': groupName});
+                  print('Group created successfully');
 
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
