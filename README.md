@@ -38,14 +38,22 @@ This app is your new sidekick in the eternal quest of collecting Spotify payment
 
 ## 📱 Screenshots
 
-### Home Screen
-![Home Screen](screenshots/homepage.png)
-
-### Group Details
-![Group Details](screenshots/groupdetail.png)
-
-### Bot Status
-![Bot Status](screenshots/botstatus.png)
+<table>
+  <tr>
+    <td width="33%">
+      <img src="screenshots/homepage.png" alt="Home Screen" />
+      <p align="center">Home Screen</p>
+    </td>
+    <td width="33%">
+      <img src="screenshots/groupdetail.png" alt="Group Details" />
+      <p align="center">Group Details</p>
+    </td>
+    <td width="33%">
+      <img src="screenshots/botstatus.png" alt="Bot Status" />
+      <p align="center">Bot Status</p>
+    </td>
+  </tr>
+</table>
 
 ## 🛠️ Tech Stack
 
