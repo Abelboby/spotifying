@@ -1956,7 +1956,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         final RegExp amountRegex =
             RegExp(r'Rs\.?(\d+(?:\.\d{1,2})?)', caseSensitive: false);
         final RegExp senderRegex = RegExp(
-            r'(?:from|by) ([A-Za-z\s]+)(?=\s+(?:Ref|UPI|on|$))',
+            r'(?:from|by)\s+([A-Za-z\s]+)(?=\s+Ref)',
             caseSensitive: false);
         final RegExp refRegex = RegExp(r'Ref No (\d+)', caseSensitive: false);
 
@@ -1967,6 +1967,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
         if (dateMatch == null || amountMatch == null || senderMatch == null) {
           print('Skipping message - Missing required information');
+          print('Date match: ${dateMatch?.groups([1, 2, 3])}');
+          print('Amount match: ${amountMatch?.group(1)}');
+          print('Sender match: ${senderMatch?.group(1)}');
           continue;
         }
 
@@ -1974,7 +1977,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         final monthStr = dateMatch.group(2)?.toLowerCase();
         final year = int.tryParse(dateMatch.group(3) ?? '');
         final amount = amountMatch.group(1);
-        final sender = senderMatch.group(1)?.trim();
+        final sender = senderMatch
+            .group(1)
+            ?.trim()
+            .toLowerCase(); // Convert to lowercase for comparison
         final refNo = refMatch?.group(1);
 
         print('Extracted data:');
@@ -2038,14 +2044,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
         // Check each pending member
         for (var member in pendingMembers.docs) {
-          final bankingName = member['bankingName']?.toString().toLowerCase();
+          final bankingName = member['bankingName']
+              ?.toString()
+              .toLowerCase(); // Convert to lowercase for comparison
           if (bankingName == null || bankingName.isEmpty) {
             print('Skipping member ${member['name']} - No banking name');
             continue;
           }
 
-          final senderLower = sender.toLowerCase();
-          if (senderLower.contains(bankingName)) {
+          print('Comparing banking names:');
+          print('SMS sender: $sender');
+          print('Member banking name: $bankingName');
+
+          if (sender.contains(bankingName) || bankingName.contains(sender)) {
             // Check payment amount if set
             final expectedAmount = member['paymentAmount'];
             if (expectedAmount != null) {
@@ -3063,7 +3074,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             .toList();
 
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom:
+                96, // Add extra padding at the bottom to prevent FAB overlay
+          ),
           children: [
             _buildMemberSection(
               context,
