@@ -3433,6 +3433,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   void _showPaymentNoteDialog(DocumentSnapshot member) {
     final TextEditingController noteController = TextEditingController();
+    String? selectedPresetNote;
+
+    final List<String> presetNotes = [
+      'SMS vannu but not detected',
+      'SMS vannila but paid',
+      'Verified by Gpay',
+      'CASH thannu',
+      'Other'
+    ];
 
     showDialog(
       context: context,
@@ -3442,11 +3451,32 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            DropdownButtonFormField<String>(
+              decoration: const InputDecoration(
+                labelText: 'Select payment status',
+              ),
+              value: selectedPresetNote,
+              items: presetNotes.map((String note) {
+                return DropdownMenuItem<String>(
+                  value: note,
+                  child: Text(note),
+                );
+              }).toList(),
+              onChanged: (String? newValue) {
+                selectedPresetNote = newValue;
+                if (newValue != 'Other') {
+                  noteController.text = newValue ?? '';
+                } else {
+                  noteController.clear();
+                }
+              },
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: noteController,
               decoration: const InputDecoration(
-                hintText: 'Enter payment details (optional)',
-                helperText: 'e.g., Paid by cash, UPI, etc.',
+                hintText: 'Enter custom payment details',
+                helperText: 'Leave empty to use selected preset note',
               ),
               maxLines: 2,
             ),
@@ -3460,12 +3490,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
-              _togglePaymentStatus(
-                member,
-                note: noteController.text.trim().isNotEmpty
-                    ? noteController.text.trim()
-                    : 'Manually marked as paid',
-              );
+              final String finalNote = noteController.text.trim().isNotEmpty
+                  ? noteController.text.trim()
+                  : (selectedPresetNote ?? 'Manually marked as paid');
+              _togglePaymentStatus(member, note: finalNote);
             },
             child: const Text('Mark as Paid'),
           ),
