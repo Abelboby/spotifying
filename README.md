@@ -39,13 +39,13 @@ This app is your new sidekick in the eternal quest of collecting Spotify payment
 ## 📱 Screenshots
 
 ### Home Screen
-[Insert screenshot of the home screen with your Spotify Family Plans]
+![Home Screen](screenshots/homepage.png)
 
 ### Group Details
-[Insert screenshot of the group details screen showing members and payment status]
+![Group Details](screenshots/groupdetail.png)
 
 ### Bot Status
-[Insert screenshot of the cool bot status indicator]
+![Bot Status](screenshots/botstatus.png)
 
 ## 🛠️ Tech Stack
 
