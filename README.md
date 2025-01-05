@@ -31,6 +31,17 @@ This app is your new sidekick in the eternal quest of collecting Spotify payment
 - Manual marking options (for those who pay in pizza 🍕)
 - Monthly payment history that's clearer than your friends' excuses
 
+### 🎨 Payment Automation
+- Automatically detects bank transactions from SMS
+- Matches payments using banking names
+- Supports custom payment amounts per member
+- Smart date detection (before/after 20th rule)
+- Manual override with preset notes:
+  - "SMS vannu but not detected"
+  - "SMS vannila but paid"
+  - "Verified by Gpay"
+  - "CASH thannu"
+
 ### 🎨 Beautiful UI
 - Modern Material Design
 - Smooth animations
@@ -60,15 +71,8 @@ This app is your new sidekick in the eternal quest of collecting Spotify payment
 - Flutter for the sleek UI
 - Firebase for storing all those "I'll pay tomorrow" promises
 - WhatsApp Web.js for the bot that never sleeps
+- SMS Permission Handler for automatic payment detection
 - Your friends' guilty consciences (results may vary)
-
-## 🚀 Getting Started
-
-1. Clone this repo
-2. Run `flutter pub get` (get those dependencies like your friends should get their wallets)
-3. Set up Firebase (because we need a place to store all the drama)
-4. Configure the WhatsApp bot (it's like training a digital payment reminder ninja)
-5. Run the app and watch the magic happen!
 
 ## 🤖 About the Bot
 
