@@ -35,7 +35,7 @@ migrate_working_dir/
 
 # Symbolication related
 app.*.symbols
-
+.vscode
 # Obfuscation related
 app.*.map.json
 
