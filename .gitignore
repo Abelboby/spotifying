@@ -57,3 +57,4 @@ android/app/google-services.json
 .firebase/
 
 # Firebase configuration
+.env
